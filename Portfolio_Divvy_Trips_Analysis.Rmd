@@ -1,0 +1,303 @@
+---
+title: "Portfolio Project Cyclist Trips Q1"
+author: "Anthony Morciglio"
+date: "2024-06-03"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## About the Project
+
+This project analysis was performed by Anthony in the beginning of June from his Coursera Google Analytics Certification.  The data is from Coursera and the study is performed to understand the properties of cyclists who purchase the membership.
+
+* For clarity, a Customer is a person who purchases a single-day pass, whereas a Subscriber purchases an annual membership.  
+* For simplicity, the analysis was conducted in the first quarter (Q1) of 2019 and 2020.  
+* The process aims to develop better marketing strategies to convince Customers to enroll in the membership and become Subscribers by identifying trends within historical Cyclist data in Chicago.  <http://rmarkdown.rstudio.com>.
+
+## About the Analysis Process
+* Data is collected from this [Link](https://divvy-tripdata.s3.amazonaws.com/index.html).
+* Data was cleaned using Microsoft Excel (locally) and exported into CSV formats.
+* Further Analysis will be conducted in R to better understand the properties and trends that will lead to insights.
+
+# S1: Load necessary libraries and datasets
+We load the data using the read_csv() function and merge datasets (with similar, but not identical columns).  Before cleaning the data, we need to observe the different columns, the classes, and think of modifications and formatting, which affects the visualization.
+
+```{r load libraries used throughout the code}
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(readr)
+library(skimr)
+library(lubridate)
+library(readxl)
+library(viridis)
+
+options(warn = -1)
+
+# -- S2: Load, Clean, and Extrapolate the Data -- #
+f1 <- "C:/Users/Anthony Morciglio/OneDrive/Coursera Google Data Analytics/Divvy_Trips_2019_2020/Divvy_Trips_2019_Q1_CL.csv"
+f2 <- "C:/Users/Anthony Morciglio/OneDrive/Coursera Google Data Analytics/Divvy_Trips_2019_2020/Divvy_Trips_2020_Q1_CL.csv"
+
+# Read the data that was cleaned in Excel and exported as a CSV file.
+Divvy_Trips_2019_Q1 <- read_csv(f1)
+Divvy_Trips_2020_Q1 <- read_csv(f2)
+
+# Join the data
+# Ensure both dataframes of the same class/type:
+Divvy_Trips_2019_Q1$trip_id <- as.character(Divvy_Trips_2019_Q1$trip_id)
+Divvy_Trips_2020_Q1$trip_id <- as.character(Divvy_Trips_2020_Q1$trip_id)
+df_merge <- merge(Divvy_Trips_2019_Q1, Divvy_Trips_2020_Q1, all.x = TRUE, all.y = TRUE)
+
+# Glance at the data
+tail(df_merge)
+glimpse(df_merge)
+str(df_merge)
+summary(df_merge)
+skim_without_charts(df_merge)
+```
+
+# S2: Clean and mutate existing datasets
+After exploring the original dataset, we notice the trip duration is in seconds and consider changing the units to minutes, we will need to mutate the dataframe to achieve this.  Additionally, there are null values for gender, which can be replaced to Other.  Lastly, we are given the birth year of the cyclists and start time of trips, which will be used to determine the age of the cyclist at the time of travel.
+
+```{r clean data, echo=FALSE}
+# -- Cleaning Data -- #
+options(warn = -1)
+# Change units of the data, replace null values, create an age column
+df_merge <- df_merge %>% mutate(tripduration_mins = round(tripduration/60, 2)) %>% 
+  mutate(gender = ifelse(is.na(df_merge$gender) | df_merge$gender == "" | df_merge$gender == "NA", "Other", gender)) %>% 
+  mutate(age = year(today()) - df_merge$birthyear)
+
+# change the format of the datetime col
+df_merge$start_time_fmt <- strptime(df_merge$start_time, format = "%m/%d/%Y %H:%M")
+df_merge$week_num <- as.numeric(format(df_merge$start_time_fmt, "%U")) # extract the week number
+df_merge$year <- as.character(df_merge$year) # change class of year to character
+
+# construct age groups from age column
+# mini step
+# Define breaks for age groups (adjust as needed)
+brk <- c(20, 30, 40, 50, 60, 130)
+
+# Create labels for each age group (adjust labels as needed)
+
+# Group the age column using cut and labels
+df_merge <- df_merge %>%  
+  mutate(age_group = cut(df_merge$age, breaks = brk))
+
+# Export the data into a csv file for further analysis in Tableau.
+path <- "C:/Users/Anthony Morciglio/OneDrive/Coursera Google Data Analytics/Divvy_Trips_2019_2020"
+file <- paste(path, "Divvy_Trips_2019_2020_Q1_merge.csv", sep = "/")
+write.csv(df_merge, file, row.names = FALSE)
+
+```
+
+# S3: Group the Data based on Categorical Factors and Perform Hypothesis Testing
+After observing the columns/variables of the dataset with skim_wihtout_charts(), we notice there are a few categorical variables such as gender and usertype.
+The dataframe df_merge can be grouped by these factors to see if there are differences in measures of central tendency/spread, such as mean/variance.  
+We evaluate the summary statistics and notice there is not much of a difference in average trip duration between men and women, but there is a difference men/women and other.  Likewise, there is a difference in average trip duration for subscriber and customer usertypes.
+We will group df_merge by the factors and perform hypothesis testing to validate the observations.  
+
+```{r}
+# -- Grouping Data -- #
+options(warn = -1)
+# Group data based on Gender and UserType
+print("--- Summarizing key statistics based on Gender ---")
+df_gender <- df_merge %>%  group_by(gender) %>% 
+  drop_na() %>% 
+  summarize(avg_tripduration_mins = mean(tripduration_mins), med_tripduration_mins = median(tripduration_mins), sd_tripduration_mins = sd(tripduration_mins), min_tripduration_mins = min(tripduration_mins), max_tripduration_mins = max(tripduration_mins))
+
+print("--- Summarizing key statistics based on Usertype ---")
+df_users <- df_merge %>%  group_by(usertype) %>% 
+  drop_na() %>% 
+  summarize(avg_tripduration_mins = mean(tripduration_mins), med_tripduration_mins = median(tripduration_mins), sd_tripduration_mins = sd(tripduration_mins), min_tripduration_mins = min(tripduration_mins), max_tripduration_mins = max(tripduration_mins))
+
+# Filter and evaluate key metrics: tripduration
+# Filter based on Gender
+df_gender_M <- filter(df_merge, df_merge$gender == "Male")
+df_gender_F <- filter(df_merge, df_merge$gender == "Female")
+df_gender_O <- filter(df_merge, df_merge$gender == "Other")
+
+# Filter based on Usertype
+df_users_S <- filter(df_merge, df_merge$usertype == "Subscriber")
+df_users_C <- filter(df_merge, df_merge$usertype == "Customer")
+
+
+# There appears to be a difference in avg trip duration between Other and Male/Female
+# We will validate the empirical observation using Hypothesis Testing
+# -- Hypothesis Testing for Gender -- #
+# F Statistic for proportion of population variances
+Fstat_mf <- var.test(df_gender_M$tripduration_mins, df_gender_F$tripduration_mins, alternative = "two.sided")
+var_diff_bool <- FALSE
+tmp_df <- df_merge %>% filter(df_merge$gender == "Male" | df_merge$gender == "Female")
+# T Statistic for difference in population averages
+Tstat_mf <- t.test(tmp_df$tripduration_mins ~ tmp_df$gender, data = tmp_df, var.equal = !var_diff_bool)
+
+if (Tstat_mf[3]$p.value <= 0.05)
+{ print("There is a Statistical difference between the average tripduration of Male and Female") 
+  } else 
+    { print("There is no Statistical difference between the average tripduration of Male and Female")
+}
+
+if (Fstat_mf[3]$p.value <= 0.05)
+{ print("There is a Statistical difference between the variance of tripduration of Male and Female") 
+  } else 
+    { print("There is no Statistical difference between the variance of tripduration of Male and Female")
+}
+
+
+# -- Apply same method for M/F and Other in Gender -- #
+Fstat_mo <- var.test(df_gender_M$tripduration_mins, df_gender_O$tripduration_mins, alternative = "two.sided")
+tmp_df <- df_merge %>% filter(df_merge$gender == "Male" | df_merge$gender == "Other")
+Tstat_mo <- t.test(tmp_df$tripduration_mins ~ tmp_df$gender, data = tmp_df, var.equal = !var_diff_bool)
+
+if (Tstat_mo[3]$p.value <= 0.05)
+  { print("There is a Statistical difference between the average tripduration of Male and Other")
+  } else 
+    { print("There is no Statistical difference between the average tripduration of Male and Other")
+}
+
+if (Fstat_mo[3]$p.value <= 0.05)
+{ print("There is a Statistical difference between the variance of tripduration of Male and Other") 
+  } else 
+    { print("There is no Statistical difference between the variance of tripduration of Male and Other")
+}
+
+# -- Hypothesis testing for UserType -- #
+Fstat_sc <- var.test(df_users_S$tripduration_mins, df_users_C$tripduration_mins, alternative = "two.sided")
+tmp_df <- df_merge %>% filter(df_merge$usertype == "Subscriber" | df_merge$usertype == "Customer")
+Tstat_sc <- t.test(tmp_df$tripduration_mins ~ tmp_df$usertype, data = tmp_df, var.equal = !var_diff_bool)
+
+if (Tstat_sc[3]$p.value <= 0.05)
+  { print("There is a Statistical difference between the average tripduration of Subscriber and Customer")
+ } else 
+   { print("There is no Statistical difference between the average tripduration of Subscriber and Customer")
+}
+
+if (Fstat_sc[3]$p.value <= 0.05) 
+  { print("There is a Statistical difference between the variance of tripduration of Subscriber and Customer")
+ } else 
+  { print("There is no Statistical difference between the variance of tripduration of Subscriber and Customer")
+  }
+
+```
+
+
+# S4: Plot and Visualize the Results obtained from Hypothesis Testing
+We first limit our data to not include outliers that significantly skew the results, which makes it difficult to extract insights from the visualizations.  By using InterQuartileRange (IQR) and the 1st and 3rd quartiles, we restrict the trip duration to a range and visualize the remaining dataframe: df_lim.  
+We visualize the trip duration vs categorical variables such as gender, usertype, weekday, month, and year using boxplots, violin plots, and histograms.  
+The visualizations suggest that Subscriber and Customer have significantly different distributions with a greater proportion of Customers using cycles to travel for more than 40 minutes whereas almost all of the Subscribers travel no more than 40 minutes. Of those individuals that purchase the annual subscription, we observe that the age group with the smallest median of trip duration is the elderly [60 - 130) suggesting we can expect the elderly to use the cycles the least.
+Lastly, we find that Saturday and Sunday have the highest 3rd quartiles (75% point of the boxplot) and the month of March has the most number of cyclist trips (compared to January and February) indicating the possibility for a seasonal growth during the spring.  Further analysis would need to compare the data based on the season.
+Additional visualizations can be found on my [Tableau Public](https://public.tableau.com/app/profile/anthony.morciglio4375/viz/DivvyTripsQ120192020/Dashboard2)
+
+```{r}
+# -- Plotting Section -- #
+options(warn = -1)
+# Filter data for cleaner plots (remove outliers)
+q3 <- quantile(df_merge$tripduration_mins, 0.75, na.rm = TRUE)
+q1 <- quantile(df_merge$tripduration_mins, 0.25, na.rm = TRUE)
+IQR <- q3 - q1
+
+# -- the following commented code does not help produce better visualizations since the data is highly skewed (there are many outliers). -- #
+# UB <- mean(df_merge$tripduration_mins, na.rm = TRUE) + 1*sd(df_merge$tripduration_mins, na.rm = TRUE)
+# LB <- mean(df_merge$tripduration_mins, na.rm = TRUE) - 1*sd(df_merge$tripduration_mins, na.rm = TRUE)
+# -- #
+
+UB <- q3 + 5 * IQR
+LB <- q1 - 5 * IQR
+df_lim <- df_merge %>% filter(df_merge$tripduration_mins <= UB & df_merge$tripduration_mins >= LB)
+
+# Boxplots
+ggplot(data=df_lim, aes(x = gender, y = tripduration_mins, fill = gender)) +
+  geom_violin(data = df_lim, trim = FALSE, draw_quantiles = c(0.25, 0.5, 0.75)) + 
+  geom_boxplot(data=df_lim, aes(df_lim$gender, df_lim$tripduration_mins), width = 0.075, alpha = 0.5, fill = 'white') + 
+  labs(x = "Gender", y = "Trip Duration (Minutes)", title = "Box Plot: Gender vs Trip Duration (Minutes)", fill = "Gender") +
+  scale_fill_manual(values = viridis(n = length(unique(df_lim$gender)))) +
+  theme_linedraw()
+
+ggplot(data=df_lim, aes(x = usertype, y = tripduration_mins, fill = usertype)) +
+  geom_violin(data = df_lim, trim = FALSE, draw_quantiles = c(0.25, 0.5, 0.75)) + 
+  geom_boxplot(data=df_lim, aes(df_lim$usertype, df_lim$tripduration_mins), width = 0.075, alpha = 0.5, fill = 'white') + 
+  labs(x = "UserType", y = "Trip Duration (Minutes)", title = "Box Plot: UserType vs Trip Duration (Minutes)", fill = "UserType") +
+  scale_fill_manual(values = viridis(n = length(unique(df_lim$usertype)))) +
+  theme_linedraw()
+
+df_lim %>% 
+  ggplot(aes(x = age_group, y = tripduration_mins, fill = age_group)) +
+  geom_violin(trim = FALSE, draw_quantiles = c(0.25, 0.5, 0.75)) + 
+  geom_boxplot(aes(df_lim$age_group, df_lim$tripduration_mins), width = 0.075, alpha = 0.5, fill = 'white') + 
+  labs(x = "Age Group", y = "Trip Duration (Minutes)", title = "Box Plot: Age Group vs Trip Duration (Minutes)", fill = "Age Group") +
+  scale_fill_manual(values = viridis(n = length(unique(df_lim$age_group)))) +
+  theme_linedraw()
+
+ggplot(data=df_lim, aes(x = age_group, y = tripduration_mins, fill = usertype)) +
+  geom_boxplot(data=df_lim, aes(df_lim$age_group, df_lim$tripduration_mins)) + 
+  labs(x = "Age Group", y = "Trip Duration (Minutes)", title = "Box Plot: Age Group vs Trip Duration (Minutes)", fill = "UserType") +
+  scale_fill_manual(values = viridis(n = length(unique(df_lim$usertype)))) +
+  theme_linedraw()
+
+# Density plots
+ggplot(data=df_lim, aes(x = tripduration_mins, fill = gender)) +
+  geom_histogram(data=df_lim, aes(fill=df_lim$gender, x=df_lim$tripduration_mins, alpha = 0.1)) + 
+  labs(x = "Trip Duration (Minutes)", y = "Frequency", title = "Histogram: Trip Duration (Minutes)", fill = "Gender") +
+  scale_fill_manual(values = viridis(n = length(unique(df_lim$gender)))) +
+  theme_linedraw()
+
+ggplot(data=df_lim, aes(x = tripduration_mins, fill = df_lim$usertype)) +
+  geom_density(data=df_lim, aes(fill=df_lim$usertype, x=df_lim$tripduration_mins, alpha = 0.1)) + 
+  labs(x = "Trip Duration (Minutes)", y = "Probability", title = "Density Plot: Trip Duration (Minutes)", fill = "UserType") +
+  scale_fill_manual(values = viridis(n = length(unique(df_lim$usertype)))) +
+  theme_linedraw()
+
+df_lim %>% 
+  mutate(weekday = factor(weekday, levels = c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'))) %>% 
+  ggplot(aes(x = weekday, y = tripduration_mins, fill = weekday)) +
+  geom_violin(trim = FALSE, draw_quantiles = c(0.25, 0.5, 0.75)) + 
+  geom_boxplot(aes(df_lim$weekday, df_lim$tripduration_mins), width = 0.075, alpha = 0.5, fill = 'white') + 
+  labs(x = "Weekday", y = "Trip Duration (Minutes)", title = "Box Plot: UserType vs Trip Duration (Minutes)", fill = "Weekday") +
+  scale_fill_manual(values = viridis(n = length(unique(df_lim$weekday)))) +
+  theme_linedraw()
+
+
+# The following needs to be modified to organize the factor based on day of the week.
+df_lim %>% 
+  mutate(weekday = factor(weekday, levels = c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'))) %>% 
+ggplot(aes(x = weekday, y = tripduration_mins, fill = usertype)) +
+  geom_boxplot(aes(df_lim$weekday, df_lim$tripduration_mins, fill = df_lim$usertype), alpha = 0.5) + 
+  labs(x = "Weekday", y = "Trip Duration (Minutes)", title = "Box Plot: UserType vs Trip Duration (Minutes)", fill = "UserType") +
+  scale_fill_manual(values = viridis(n = length(unique(df_lim$usertype)))) +
+  theme_linedraw()
+
+df_lim %>% 
+  ggplot(aes(x = age_group, y = tripduration_mins, fill = usertype)) +
+  geom_boxplot(aes(df_lim$age_group, df_lim$tripduration_mins, fill = df_lim$usertype), alpha = 0.5) + 
+  labs(x = "Weekday", y = "Trip Duration (Minutes)", title = "Box Plot: UserType vs Trip Duration (Minutes)", fill = "UserType") +
+  scale_fill_manual(values = viridis(n = length(unique(df_lim$usertype)))) +
+  theme_linedraw()
+
+ggplot(data=df_lim, aes(x = weekday, y = tripduration_mins, fill = weekday)) +
+  #geom_violin(data = df_lim, trim = FALSE, draw_quantiles = c(0.25, 0.5, 0.75)) + 
+  geom_boxplot(data=df_lim, aes(df_lim$weekday, df_lim$tripduration_mins, fill = df_lim$weekday), alpha = 0.5) + 
+  labs(x = "Weekday", y = "Trip Duration (Minutes)", title = "Box Plot: UserType vs Trip Duration (Minutes)", fill = "Weekday") +
+  scale_fill_manual(values = viridis(n = length(unique(df_lim$weekday)))) +
+  theme_linedraw()
+
+
+# -- Time Plots -- #
+ggplot(data = df_lim, aes(x = df_lim$month, fill = df_lim$year)) +
+  geom_histogram(data = df_lim, aes(x = df_lim$month, fill = df_lim$year), stat = 'count') + 
+  labs(x = "Month", y = "Number of Trips", title = "Number of Trips vs Month", fill = "Year") +
+  scale_fill_manual(values = viridis(n = length(unique(df_lim$year)))) +
+  theme_linedraw()
+
+ggplot(data = df_lim, aes(x = week_num, fill = df_lim$year)) +
+  geom_histogram(data = df_lim, aes(fill = df_lim$year, x = df_lim$week_num)) + 
+  labs(x = "Week Number", y = "Number of Trips", title = "Number of Trips vs Week Number", fill = "Year") +
+  scale_fill_manual(values = viridis(n = length(unique(df_lim$year)))) +
+  theme_linedraw()
+
+```
+
